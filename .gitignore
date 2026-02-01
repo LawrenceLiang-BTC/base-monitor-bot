@@ -1,0 +1,5 @@
+node_modules
+.env
+addresses.json
+*.log
+.DS_Store
