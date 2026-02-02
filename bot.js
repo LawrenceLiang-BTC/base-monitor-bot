@@ -8,7 +8,8 @@ const config = {
   chatId: process.env.TELEGRAM_CHAT_ID,
   apiKey: process.env.BASESCAN_API_KEY,
   interval: parseInt(process.env.CHECK_INTERVAL) * 1000 || 30000,
-  minTransferAmount: parseFloat(process.env.MIN_TRANSFER_AMOUNT) || 0.1 // 最小转入额度，默认0.1
+  minTransferAmount: parseFloat(process.env.MIN_TRANSFER_AMOUNT) || 0.1, // 最小转入额度，默认0.1
+  minUsdValue: parseFloat(process.env.MIN_USD_VALUE) || 10 // 最小美元价值，默认10美金
 };
 
 const bot = new TelegramBot(config.botToken, { polling: true });
@@ -69,6 +70,25 @@ async function getTokenTransfers(address, startBlock) {
   }
 }
 
+// 获取代币价格（美元）
+async function getTokenPrice(contractAddress) {
+  try {
+    // 使用 CoinGecko API 获取价格（Base 链）
+    const response = await axios.get(`https://api.geckoterminal.com/api/v2/simple/networks/base/token_price/${contractAddress}`, {
+      timeout: 3000
+    });
+
+    if (response.data?.data?.attributes?.token_prices) {
+      const price = parseFloat(response.data.data.attributes.token_prices[contractAddress.toLowerCase()]);
+      return price || 0;
+    }
+    return 0;
+  } catch (error) {
+    console.error('获取代币价格失败:', contractAddress, error.message);
+    return 0;
+  }
+}
+
 function formatAmount(value) {
   if (value >= 1e9) return (value / 1e9).toFixed(2) + 'B';
   if (value >= 1e6) return (value / 1e6).toFixed(2) + 'M';
@@ -76,7 +96,7 @@ function formatAmount(value) {
   return value.toFixed(2);
 }
 
-function formatTransaction(tx, monitorAddress) {
+async function formatTransaction(tx, monitorAddress) {
   const addressData = monitoredAddresses[monitorAddress.toLowerCase()];
   const remark = addressData?.remark || '未命名';
   const isIncoming = tx.to.toLowerCase() === monitorAddress.toLowerCase();
@@ -96,11 +116,22 @@ function formatTransaction(tx, monitorAddress) {
     return null;
   }
 
+  // 获取代币价格并计算美元价值
+  const tokenPrice = await getTokenPrice(tx.contractAddress);
+  const usdValue = amount * tokenPrice;
+
+  // 如果美元价值小于阈值，过滤掉
+  if (usdValue < config.minUsdValue && tokenPrice > 0) {
+    console.log('已过滤低价值交易:', tx.contractAddress, tx.tokenName, `${amount} = $${usdValue.toFixed(2)}`);
+    return null;
+  }
+
   return `
 【${remark}】 ${direction}
 ${tx.tokenName} (${tx.tokenSymbol})
 CA: ${tx.contractAddress}
 数量: ${formatAmount(amount)}
+价值: $${usdValue > 0 ? usdValue.toFixed(2) : '未知'}
 地址: ${monitorAddress}
 时间: ${new Date(parseInt(tx.timeStamp) * 1000).toLocaleString('zh-CN')}
   `.trim();
