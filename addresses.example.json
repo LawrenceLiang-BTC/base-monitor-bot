@@ -1,0 +1,10 @@
+{
+  "0xYourWalletAddress1": {
+    "lastBlock": 0,
+    "remark": "钱包备注1"
+  },
+  "0xYourWalletAddress2": {
+    "lastBlock": 0,
+    "remark": "钱包备注2"
+  }
+}
